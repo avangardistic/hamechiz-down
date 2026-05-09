@@ -1,0 +1,241 @@
+name: "🍉 همه‌چیزدان - دانلود از یوتیوب، اینستا، توییتر، تیک‌تاک و..."
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_type:
+        description: 'نوع عملیات'
+        required: true
+        default: 'create'
+        type: choice
+        options:
+          - 'create (ساخت فایل لیست)'
+          - 'download (دانلود از روی لیست)'
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: دریافت ریپازیتوری
+        uses: actions/checkout@v4
+      
+      - name: نصب ابزارها
+        run: |
+          pip install yt-dlp
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      
+      - name: ساخت فایل لیست
+        if: github.event.inputs.action_type == 'create (ساخت فایل لیست)'
+        run: |
+          cat > links.txt << 'EOF'
+# ==================================================
+# فایل لیست دانلود همه‌چیزدان
+# ==================================================
+# 
+# روش استفاده:
+# لینک|نوع|کیفیت
+#
+# نوع ها:
+# video - برای دانلود ویدیو
+# audio - برای دانلود فقط صدا
+#
+# کیفیت ها:
+# 2160, 1440, 1080, 720, 480, 360, best
+#
+# ==================================================
+
+https://www.youtube.com/watch?v=dQw4w9WgXcQ|video|1080
+
+# مثال های بیشتر (کامنت بردارید تا فعال بشن):
+# https://youtu.be/XXXXXXXXXXX|audio|best
+# https://www.instagram.com/p/XXXXXXXXXX|video|720
+# https://twitter.com/XXXX/status/XXXXX|video|best
+# https://www.tiktok.com/@XXXX/video/XXXXX|video|1080
+# https://soundcloud.com/XXXXX/XXXXX|audio|best
+# https://www.facebook.com/watch?v=XXXXX|video|720
+
+EOF
+          echo ""
+          echo "✅ فایل links.txt ساخته شد!"
+          echo "📝 حالا این فایل رو ویرایش کن و لینک های خودت رو به اون اضافه کن"
+          echo "🔗 بعد از ویرایش، دوباره این اکشن رو با گزینه 'download' اجرا کن"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add links.txt
+          git commit -m "➕ افزودن فایل لیست دانلود" || echo "فایل از قبل وجود داشت"
+          git push
+      
+      - name: خوندن لیست و دانلود
+        if: github.event.inputs.action_type == 'download (دانلود از روی لیست)'
+        run: |
+          if [ ! -f "links.txt" ]; then
+            echo "❌ خطا: فایل links.txt پیدا نشد!"
+            echo "📝 اول گزینه 'ساخت فایل لیست' رو اجرا کن"
+            exit 1
+          fi
+          
+          mkdir -p downloads
+          
+          echo ""
+          echo "========================================="
+          echo "🚀 شروع فرایند دانلود"
+          echo "========================================="
+          echo ""
+          
+          COUNTER=1
+          SUCCESS=0
+          FAIL=0
+          
+          while IFS='|' read -r url type quality; do
+            
+            # پاک کردن فاصله ها
+            url=$(echo "$url" | xargs)
+            type=$(echo "$type" | xargs)
+            quality=$(echo "$quality" | xargs)
+            
+            # رد کردن خطوط خالی و کامنت
+            if [[ -z "$url" ]]; then
+              continue
+            fi
+            
+            if [[ "$url" =~ ^# ]]; then
+              continue
+            fi
+            
+            echo ""
+            echo "-----------------------------------------"
+            echo "📥 مورد شماره: $COUNTER"
+            echo "🔗 لینک: $url"
+            echo "📁 نوع: $type"
+            echo "🎬 کیفیت: $quality"
+            echo "-----------------------------------------"
+            
+            # تنظیم کیفیت بر اساس نوع و کیفیت انتخابی
+            if [ "$type" = "audio" ]; then
+              yt-dlp \
+                -f bestaudio \
+                --extract-audio \
+                --audio-format mp3 \
+                --audio-quality 0 \
+                --no-playlist \
+                --output "downloads/file_${COUNTER}.%(ext)s" \
+                "$url"
+            else
+              case "$quality" in
+                2160)
+                  yt-dlp -f "bestvideo[height<=2160]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                1440)
+                  yt-dlp -f "bestvideo[height<=1440]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                1080)
+                  yt-dlp -f "bestvideo[height<=1080]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                720)
+                  yt-dlp -f "bestvideo[height<=720]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                480)
+                  yt-dlp -f "bestvideo[height<=480]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                360)
+                  yt-dlp -f "bestvideo[height<=360]+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+                *)
+                  yt-dlp -f "bestvideo+bestaudio" --merge-output-format mp4 --no-playlist --output "downloads/file_${COUNTER}.%(ext)s" "$url"
+                  ;;
+              esac
+            fi
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ دانلود موفق بود!"
+              SUCCESS=$((SUCCESS + 1))
+              
+              # نمایش حجم فایل دانلود شده
+              FILE_PATH=$(ls -t downloads/ | head -n1)
+              FILE_SIZE=$(du -h "downloads/$FILE_PATH" | cut -f1)
+              echo "📦 حجم فایل: $FILE_SIZE"
+            else
+              echo "❌ دانلود ناموفق بود!"
+              FAIL=$((FAIL + 1))
+            fi
+            
+            COUNTER=$((COUNTER + 1))
+            
+          done < links.txt
+          
+          echo ""
+          echo "========================================="
+          echo "📊 گزارش نهایی دانلود"
+          echo "========================================="
+          echo "✅ موفق: $SUCCESS"
+          echo "❌ ناموفق: $FAIL"
+          echo "📁 مجموع فایل‌ها: $((SUCCESS + FAIL))"
+          echo "========================================="
+      
+      - name: بسته بندی فایل‌ها
+        if: github.event.inputs.action_type == 'download (دانلود از روی لیست)'
+        run: |
+          cd downloads || exit
+          
+          FILE_COUNT=$(ls -1 2>/dev/null | wc -l)
+          
+          if [ $FILE_COUNT -eq 0 ]; then
+            echo "هیچ فایلی دانلود نشده"
+            exit 0
+          fi
+          
+          TOTAL_SIZE=$(du -sb . | cut -f1)
+          
+          # اگه بیشتر از 1 فایل یا حجم بیشتر از 90 مگ بود، زیپ کن
+          if [ $FILE_COUNT -gt 1 ] || [ $TOTAL_SIZE -gt 90000000 ]; then
+            echo ""
+            echo "📦 در حال بسته بندی فایل‌ها..."
+            ZIP_NAME="همه_چیزدان_$(date +'%Y%m%d_%H%M%S').zip"
+            zip -r "../$ZIP_NAME" ./*
+            cd ..
+            rm -rf downloads
+            echo "✅ فایل‌ها در $ZIP_NAME بسته بندی شدن"
+            echo "📦 حجم کل: $(du -h "$ZIP_NAME" | cut -f1)"
+          else
+            echo "فایل‌ها به صورت جداگانه ذخیره می‌شن"
+          fi
+      
+      - name: آپلود به ریپازیتوری
+        if: github.event.inputs.action_type == 'download (دانلود از روی لیست)'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          if ls *.zip 1> /dev/null 2>&1; then
+            git add *.zip
+            git commit -m "🎬 دانلود شده با همه‌چیزدان - $(date +'%Y-%m-%d %H:%M:%S')"
+            git push
+            echo ""
+            echo "✅ فایل زیپ شده به ریپازیتوری اضافه شد"
+          elif [ -d "downloads" ] && [ "$(ls -A downloads)" ]; then
+            git add downloads/
+            git commit -m "🎬 دانلود شده با همه‌چیزدان - $(date +'%Y-%m-%d %H:%M:%S')"
+            git push
+            echo ""
+            echo "✅ فایل‌ها به ریپازیتوری اضافه شدند"
+          fi
+      
+      - name: نمایش نتیجه نهایی
+        if: github.event.inputs.action_type == 'download (دانلود از روی لیست)'
+        run: |
+          echo ""
+          echo "========================================="
+          echo "🎉 همه‌چیزدان کارش تموم شد!"
+          echo "========================================="
+          echo ""
+          echo "🔗 فایل‌های دانلود شده رو میتونی از اینجا بگیری:"
+          echo "https://github.com/${{ github.repository }}"
+          echo ""
+          echo "📁 اگه فایل زیپ شده باشه، توی ریشه ریپازیتوریه"
+          echo "📁 اگه جدا باشه، توی پوشه downloads/"
+          echo "========================================="
