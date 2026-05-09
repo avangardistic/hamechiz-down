@@ -149,7 +149,7 @@ https://soundcloud.com/XXXXX/XXXXX|audio|best
 ### ❌ خطا: "Permission denied"
 **راه حل**: برو به `Settings` > `Actions` > `General` و دسترسی `Read and write permissions` رو فعال کن
 
-### ❌ دانلود بعضی لینک‌ها失敗 می‌شه
+### ❌ دانلود بعضی لینکها دچار خطامی‌شه
 **راه حل**: 
 - مطمئن شو لینک درست و عمومی هست
 - سعی کن کیفیت رو `best` یا `720` بذاری
