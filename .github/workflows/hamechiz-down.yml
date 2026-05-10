@@ -1,4 +1,4 @@
-name: "🍉 همه‌چیزدان v3.0 - دانلود از یوتیوب، اینستا، توییتر، تیک‌تاک، آپارات و 1700+ سایت دیگر"
+name: "🍉 همه‌چیزدان v4.0 - Download from YouTube, Telegram, Instagram, SoundCloud, Google Play, Direct Links & Archive Web Pages"
 
 on:
   push:
@@ -6,12 +6,27 @@ on:
       - "**"
   workflow_dispatch:
     inputs:
-      manual_url:
-        description: '🔗 لینک ویدیو/صدا (اختیاری - در غیر این صورت از commit message خوانده می‌شود)'
+      mode:
+        description: 'Mode / حالت اجرا'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - 'auto (Auto-detect from commit / تشخیص خودکار)'
+          - 'direct (Direct URL / لینک مستقیم)'
+          - 'youtube (YouTube)'
+          - 'telegram (Telegram - Public Channels)'
+          - 'instagram (Instagram)'
+          - 'soundcloud (SoundCloud)'
+          - 'googleplay (Google Play APK)'
+          - 'webpage (Archive Web Page as MHTML)'
+          - 'adult (Adult Content)'
+      url:
+        description: 'URL / لینک (for manual mode / برای حالت دستی)'
         required: false
         type: string
       quality:
-        description: '🎬 کیفیت پیشفرض'
+        description: 'Quality / کیفیت (for YouTube/Instagram)'
         required: false
         default: 'best'
         type: choice
@@ -23,93 +38,596 @@ on:
           - '720'
           - '480'
           - '360'
-      audio_only:
-        description: '🎵 فقط صدا (MP3)'
+          - 'audio-only'
+      output_folder:
+        description: 'Output folder / پوشه خروجی'
         required: false
-        default: 'false'
-        type: boolean
-      subtitles:
-        description: '📝 دانلود زیرنویس (انگلیسی و فارسی)'
-        required: false
-        default: 'false'
-        type: boolean
+        default: 'downloads'
+        type: string
 
 jobs:
   download:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
-      - name: 📥 دریافت ریپازیتوری
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🐍 نصب ابزارهای مورد نیاز
+      - name: 🐍 Setup Python & Dependencies
         run: |
-          echo "📦 در حال نصب yt-dlp و ffmpeg..."
-          pip install --upgrade yt-dlp
+          echo "📦 Installing required tools..."
           sudo apt-get update
-          sudo apt-get install -y ffmpeg zip unzip
-          echo "✅ همه ابزارها نصب شدند!"
+          sudo apt-get install -y ffmpeg zip unzip wget curl jq
+          pip install --upgrade yt-dlp
+          pip install pyppeteer telegram-send
+          echo "✅ All tools installed successfully!"
 
-      - name: 🍪 تنظیم کوکی‌های یوتیوب (اختیاری - برای ویدیوهای age-restricted)
+      - name: 🍪 Setup YouTube Cookies (for age-restricted content)
         run: |
           if [ -n "${{ secrets.YOUTUBE_COOKIES }}" ]; then
             mkdir -p ~/.cache/yt-dlp/youtube
             echo "${{ secrets.YOUTUBE_COOKIES }}" > ~/.cache/yt-dlp/youtube/cookies.txt
-            echo "✅ کوکی‌های یوتیوب نصب شدند (برای دسترسی به ویدیوهای محدودیت سنی)"
+            echo "✅ YouTube cookies installed"
           else
-            echo "⚠️ کوکی یافت نشد - دانلود بدون کوکی انجام می‌شود"
-            echo "💡 برای دانلود ویدیوهای age-restricted، Secret به نام YOUTUBE_COOKIES اضافه کنید"
+            echo "⚠️ No cookies found - downloading without cookies"
           fi
 
-      - name: 🔍 استخراج لینک و تنظیمات از commit message یا ورودی دستی
+      - name: 🔍 Parse commit message or manual input
+        id: parser
         run: |
-          # بررسی لینک از ورودی دستی
-          if [ -n "${{ github.event.inputs.manual_url }}" ]; then
-            URL="${{ github.event.inputs.manual_url }}"
-            MSG="manual run from GitHub UI"
-            echo "📥 لینک از ورودی دستی: $URL"
+          MODE="${{ github.event.inputs.mode }}"
+          MANUAL_URL="${{ github.event.inputs.url }}"
+          MANUAL_QUALITY="${{ github.event.inputs.quality }}"
+          OUTPUT_FOLDER="${{ github.event.inputs.output_folder }}"
+          
+          # Default values
+          URL=""
+          QUALITY="$MANUAL_QUALITY"
+          AUDIO_ONLY="false"
+          SUBTITLES="false"
+          PLAYLIST="false"
+          SPONSORBLOCK="true"
+          
+          # Check if running from manual dispatch
+          if [ -n "$MANUAL_URL" ] && [ "$MODE" != "auto (Auto-detect from commit / تشخیص خودکار)" ]; then
+            URL="$MANUAL_URL"
+            echo "✅ Using manual mode: $MODE"
           else
-            MSG=$(git log -1 --pretty=%B)
-            URL=$(echo "$MSG" | grep -oP '(https?://[^\s]+)' | head -n1)
-            echo "📝 پیام commit: $MSG"
+            # Parse from commit message
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            echo "📝 Commit message: $COMMIT_MSG"
+            
+            # Extract URL from commit message (any http/https link)
+            URL=$(echo "$COMMIT_MSG" | grep -oP '(https?://[^\s]+)' | head -n1)
+            
+            # Parse parameters from commit message (English & Persian)
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*direct\|direct url\|لینک مستقیم"; then MODE="direct"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*youtube\|yt\|یوتیوب"; then MODE="youtube"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*telegram\|تلگرام"; then MODE="telegram"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*instagram\|اینستاگرام"; then MODE="instagram"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*soundcloud\|ساندکلاد\|ساوندکلاود"; then MODE="soundcloud"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*googleplay\|google play\|گوگل پلی\|apk"; then MODE="googleplay"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*webpage\|mhtml\|آرشیو صفحه\|وب پیج"; then MODE="webpage"; fi
+            if echo "$COMMIT_MSG" | grep -qi "mode:[[:space:]]*adult\|بزرگسالان\|18+"; then MODE="adult"; fi
+            
+            # Quality parameters
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*2160\|4k"; then QUALITY="2160"; fi
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*1440\|2k"; then QUALITY="1440"; fi
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*1080"; then QUALITY="1080"; fi
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*720"; then QUALITY="720"; fi
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*480"; then QUALITY="480"; fi
+            if echo "$COMMIT_MSG" | grep -qi "quality:[[:space:]]*360"; then QUALITY="360"; fi
+            if echo "$COMMIT_MSG" | grep -qi "audio-only\|فقط صدا\|mp3"; then AUDIO_ONLY="true"; QUALITY="best"; fi
+            
+            # Other parameters
+            if echo "$COMMIT_MSG" | grep -qi "playlist:[[:space:]]*true\|لیست پخش"; then PLAYLIST="true"; fi
+            if echo "$COMMIT_MSG" | grep -qi "subtitles:[[:space:]]*true\|زیرنویس"; then SUBTITLES="true"; fi
+            if echo "$COMMIT_MSG" | grep -qi "sponsorblock:[[:space:]]*false"; then SPONSORBLOCK="false"; fi
+            
+            # Output folder from commit
+            FOLDER_MATCH=$(echo "$COMMIT_MSG" | grep -oP 'folder:[[:space:]]*[a-zA-Z0-9_-]+' | head -n1 | cut -d':' -f2 | xargs)
+            if [ -n "$FOLDER_MATCH" ]; then OUTPUT_FOLDER="$FOLDER_MATCH"; fi
           fi
           
           if [ -z "$URL" ]; then
             echo ""
-            echo "❌ خطا: هیچ لینکی پیدا نشد!"
+            echo "❌ ERROR: No URL found!"
             echo "========================================="
-            echo "📖 راهنمای استفاده:"
+            echo "📖 Usage Guide:"
             echo "========================================="
             echo ""
-            echo "روش 1 - از طریق commit message:"
-            echo "  git commit -m \"دانلود https://youtu.be/XXXXXX quality:1080 playlist:true\""
+            echo "Method 1 - Via GitHub UI:"
+            echo "  - Go to Actions tab"
+            echo "  - Select '🍉 همه‌چیزدان v4.0'"
+            echo "  - Click 'Run workflow'"
+            echo "  - Select mode and enter URL"
+            echo ""
+            echo "Method 2 - Via commit message:"
+            echo "  git commit -m \"download <URL> mode:youtube quality:1080\""
             echo "  git push"
             echo ""
-            echo "روش 2 - از طریق GitHub UI:"
-            echo "  به تب Actions بروید"
-            echo "  روی '🍉 همه‌چیزدان v3.0' کلیک کنید"  
-            echo "  روی 'Run workflow' کلیک کنید"
-            echo "  لینک را در فیلد manual_url وارد کنید"
-            echo ""
-            echo "پارامترهای قابل استفاده در commit message:"
-            echo "  quality:2160/1440/1080/720/480/360 - کیفیت ویدیو"
-            echo "  playlist:true - دانلود کل پلی‌لیست"
-            echo "  audio-only:true - فقط صدا (MP3)"
-            echo "  subtitles:true - دانلود زیرنویس"
-            echo "  sponsorblock:false - غیرفعال کردن حذف اسپانسر"
+            echo "Available modes: direct, youtube, telegram, instagram,"
+            echo "                 soundcloud, googleplay, webpage, adult"
             echo "========================================="
             exit 1
           fi
+          
+          # Auto-detect mode if not specified
+          if [ "$MODE" = "auto (Auto-detect from commit / تشخیص خودکار)" ] || [ -z "$MODE" ]; then
+            if [[ "$URL" == *"youtube.com"* ]] || [[ "$URL" == *"youtu.be"* ]]; then MODE="youtube"
+            elif [[ "$URL" == *"t.me"* ]] || [[ "$URL" == *"telegram"* ]]; then MODE="telegram"
+            elif [[ "$URL" == *"instagram.com"* ]] || [[ "$URL" == *"instagr.am"* ]]; then MODE="instagram"
+            elif [[ "$URL" == *"soundcloud.com"* ]]; then MODE="soundcloud"
+            elif [[ "$URL" == *"play.google.com"* ]]; then MODE="googleplay"
+            elif [[ "$URL" == *".apk"* ]]; then MODE="direct"
+            elif [[ "$URL" =~ \.(mp4|mkv|avi|mov|mp3|zip|rar|pdf|jpg|png)$ ]]; then MODE="direct"
+            else MODE="webpage"
+            fi
+            echo "🔍 Auto-detected mode: $MODE"
+          fi
+          
+          # Save to environment
+          echo "MODE=$MODE" >> $GITHUB_ENV
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "QUALITY=$QUALITY" >> $GITHUB_ENV
+          echo "AUDIO_ONLY=$AUDIO_ONLY" >> $GITHUB_ENV
+          echo "SUBTITLES=$SUBTITLES" >> $GITHUB_ENV
+          echo "PLAYLIST=$PLAYLIST" >> $GITHUB_ENV
+          echo "SPONSORBLOCK=$SPONSORBLOCK" >> $GITHUB_ENV
+          echo "OUTPUT_FOLDER=$OUTPUT_FOLDER" >> $GITHUB_ENV
+          
+          # Create output directory
+          mkdir -p "$OUTPUT_FOLDER"
+          
+          echo ""
+          echo "========================================="
+          echo "⚙️ Configuration:"
+          echo "   Mode: $MODE"
+          echo "   URL: $URL"
+          echo "   Quality: $QUALITY"
+          echo "   Output folder: $OUTPUT_FOLDER"
+          echo "========================================="
 
-          echo "🔗 لینک تشخیص داده شده: $URL"
-          echo "----------------------------------------"
+      # ==================== DIRECT DOWNLOAD ====================
+      - name: 📥 Direct Download with wget
+        if: env.MODE == 'direct'
+        run: |
+          echo "📥 Downloading direct link: $URL"
+          
+          FILENAME=$(basename "$URL" | cut -d'?' -f1)
+          if [ -z "$FILENAME" ] || [[ "$FILENAME" != *.* ]]; then
+            FILENAME="downloaded_file_$(date +%Y%m%d_%H%M%S)"
+          fi
+          
+          cd "$OUTPUT_FOLDER"
+          wget --no-check-certificate \
+               --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+               --tries=10 \
+               --timeout=60 \
+               -O "$FILENAME" \
+               "$URL"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Download successful: $FILENAME"
+            echo "DOWNLOADED_FILE=$FILENAME" >> $GITHUB_ENV
+          else
+            echo "❌ Download failed!"
+            exit 1
+          fi
 
-          # تنظیمات پیشفرض
-          if [ -n "${{ github.event.inputs.manual_url }}" ]; then
-            # استفاده از تنظیمات workflow_dispatch
-            QUALITY="${{ github.event.inputs.quality }}"
-            AUDIO_ONLY="${{ github.event.inputs
+      # ==================== YOUTUBE DOWNLOADER ====================
+      - name: 🎬 YouTube Downloader
+        if: env.MODE == 'youtube'
+        run: |
+          echo "🎬 Downloading from YouTube: $URL"
+          
+          YT_CMD="yt-dlp \
+            --concurrent-fragments 8 \
+            --retries 15 \
+            --fragment-retries 15 \
+            --sleep-interval 3 \
+            --max-sleep-interval 6 \
+            --no-check-certificate \
+            --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'"
+          
+          # Add cookies if available
+          if [ -f ~/.cache/yt-dlp/youtube/cookies.txt ]; then
+            YT_CMD="$YT_CMD --cookies ~/.cache/yt-dlp/youtube/cookies.txt"
+          fi
+          
+          # Audio or video
+          if [ "$AUDIO_ONLY" = "true" ]; then
+            YT_CMD="$YT_CMD -x --audio-format mp3 --audio-quality 0"
+          else
+            case "$QUALITY" in
+              2160) YT_CMD="$YT_CMD -f 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]'" ;;
+              1440) YT_CMD="$YT_CMD -f 'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]'" ;;
+              1080) YT_CMD="$YT_CMD -f 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]'" ;;
+              720)  YT_CMD="$YT_CMD -f 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]'" ;;
+              480)  YT_CMD="$YT_CMD -f 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]'" ;;
+              360)  YT_CMD="$YT_CMD -f 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]'" ;;
+              *)    YT_CMD="$YT_CMD -f 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'" ;;
+            esac
+            YT_CMD="$YT_CMD --merge-output-format mp4"
+          fi
+          
+          # Playlist
+          if [ "$PLAYLIST" = "true" ]; then
+            YT_CMD="$YT_CMD --yes-playlist"
+          else
+            YT_CMD="$YT_CMD --no-playlist"
+          fi
+          
+          # Subtitles and metadata
+          [ "$SUBTITLES" = "true" ] && YT_CMD="$YT_CMD --write-auto-subs --write-subs --sub-lang en,fa --embed-subs"
+          [ "$SPONSORBLOCK" = "true" ] && YT_CMD="$YT_CMD --sponsorblock-remove all"
+          YT_CMD="$YT_CMD --embed-metadata --embed-thumbnail --restrict-filenames"
+          YT_CMD="$YT_CMD --output '$OUTPUT_FOLDER/%(title)s [%(id)s].%(ext)s'"
+          
+          echo "🚀 Running yt-dlp..."
+          eval "$YT_CMD \"$URL\""
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ YouTube download completed!"
+          else
+            echo "❌ YouTube download failed!"
+            exit 1
+          fi
+
+      # ==================== TELEGRAM DOWNLOADER ====================
+      - name: 📱 Telegram Downloader (Public Channels)
+        if: env.MODE == 'telegram'
+        run: |
+          echo "📱 Downloading from Telegram: $URL"
+          
+          # Extract channel and post ID from URL
+          # Format: https://t.me/username/post_id
+          # Or: https://telegram.org/dl?url=...
+          
+          cd "$OUTPUT_FOLDER"
+          
+          # Use Python script for Telegram download
+          python3 << 'EOF'
+          import re
+          import requests
+          import os
+          import sys
+          
+          url = os.environ.get('URL', '')
+          
+          def download_telegram_file(url, output_folder):
+              try:
+                  # Method 1: Using Telegram's public bot API
+                  match = re.search(r't\.me/([^/]+)/(\d+)', url)
+                  if match:
+                      channel = match.group(1)
+                      post_id = match.group(2)
+                      
+                      # Use tg.bot api or alternative
+                      api_url = f"https://tg-bot-api.vercel.app/dl?url={url}"
+                      response = requests.get(api_url, timeout=30)
+                      
+                      if response.status_code == 200:
+                          data = response.json()
+                          if 'file_url' in data:
+                              file_url = data['file_url']
+                              filename = f"telegram_{channel}_{post_id}.mp4"
+                              filepath = os.path.join(output_folder, filename)
+                              
+                              # Download file
+                              r = requests.get(file_url, stream=True)
+                              with open(filepath, 'wb') as f:
+                                  for chunk in r.iter_content(chunk_size=8192):
+                                      f.write(chunk)
+                              print(f"✅ Downloaded: {filename}")
+                              return True
+                  
+                  # Method 2: Try to get direct link from message
+                  print(f"⚠️ Could not download automatically: {url}")
+                  print("💡 Note: Telegram downloading works best with public channels")
+                  print("💡 Try using the direct download link from Telegram Web")
+                  return False
+                  
+              except Exception as e:
+                  print(f"❌ Error downloading from Telegram: {e}")
+                  return False
+          
+          if download_telegram_file(url, '.'):
+              print("✅ Telegram download completed!")
+          else:
+              print("❌ Telegram download failed!")
+              print("💡 Alternative: Use 'direct' mode with the media URL")
+              sys.exit(1)
+          EOF
+
+      # ==================== INSTAGRAM DOWNLOADER ====================
+      - name: 📸 Instagram Downloader
+        if: env.MODE == 'instagram'
+        run: |
+          echo "📸 Downloading from Instagram: $URL"
+          
+          YT_CMD="yt-dlp \
+            --no-check-certificate \
+            --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' \
+            --no-playlist \
+            --output '$OUTPUT_FOLDER/%(title)s [%(id)s].%(ext)s'"
+          
+          # Quality for Instagram
+          if [ "$AUDIO_ONLY" = "true" ]; then
+            YT_CMD="$YT_CMD -x --audio-format mp3"
+          else
+            case "$QUALITY" in
+              best|1080|720) YT_CMD="$YT_CMD -f 'bestvideo+bestaudio/best'" ;;
+              *) YT_CMD="$YT_CMD -f 'best[height<=$QUALITY]'" ;;
+            esac
+          fi
+          
+          eval "$YT_CMD \"$URL\""
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Instagram download completed!"
+          else
+            echo "❌ Instagram download failed!"
+            exit 1
+          fi
+
+      # ==================== SOUNDCLOUD DOWNLOADER ====================
+      - name: 🎵 SoundCloud Downloader
+        if: env.MODE == 'soundcloud'
+        run: |
+          echo "🎵 Downloading from SoundCloud: $URL"
+          
+          YT_CMD="yt-dlp \
+            --no-check-certificate \
+            --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' \
+            --extract-audio \
+            --audio-format mp3 \
+            --audio-quality 0 \
+            --output '$OUTPUT_FOLDER/%(title)s [%(id)s].%(ext)s'"
+          
+          if [ "$PLAYLIST" = "true" ]; then
+            YT_CMD="$YT_CMD --yes-playlist"
+          else
+            YT_CMD="$YT_CMD --no-playlist"
+          fi
+          
+          eval "$YT_CMD \"$URL\""
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ SoundCloud download completed!"
+          else
+            echo "❌ SoundCloud download failed!"
+            exit 1
+          fi
+
+      # ==================== GOOGLE PLAY APK DOWNLOADER ====================
+      - name: 🛍️ Google Play APK Downloader
+        if: env.MODE == 'googleplay'
+        run: |
+          echo "🛍️ Downloading APK from Google Play: $URL"
+          
+          # Extract package name from URL
+          PACKAGE_NAME=$(echo "$URL" | grep -oP 'id=\K[a-zA-Z0-9._]+' || echo "$URL" | grep -oP 'apps/details\?id=\K[a-zA-Z0-9._]+')
+          
+          if [ -z "$PACKAGE_NAME" ]; then
+            echo "❌ Could not extract package name from URL"
+            exit 1
+          fi
+          
+          echo "📦 Package: $PACKAGE_NAME"
+          
+          cd "$OUTPUT_FOLDER"
+          
+          # Try multiple APK download sources
+          echo "🌐 Trying to download APK..."
+          
+          # Method 1: Using APKPure API
+          APKPURE_URL="https://apkpure.net/api/v1/app/$PACKAGE_NAME/download"
+          wget --no-check-certificate \
+               --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+               -O "${PACKAGE_NAME}.apk" \
+               "$APKPURE_URL" 2>/dev/null || true
+          
+          # Method 2: Using APKMirror if first failed
+          if [ ! -f "${PACKAGE_NAME}.apk" ] || [ $(stat -c%s "${PACKAGE_NAME}.apk") -lt 10000 ]; then
+            rm -f "${PACKAGE_NAME}.apk"
+            echo "Trying APKMirror..."
+            
+            SEARCH_URL="https://www.apkmirror.com/?post_type=app_release&searchtype=apk&s=$PACKAGE_NAME"
+            APK_URL=$(curl -s "$SEARCH_URL" | grep -oP 'https://www.apkmirror.com/apk/[^"]+/download/' | head -n1)
+            
+            if [ -n "$APK_URL" ]; then
+              wget --no-check-certificate \
+                   --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+                   -O "${PACKAGE_NAME}.apk" \
+                   "$APK_URL"
+            fi
+          fi
+          
+          if [ -f "${PACKAGE_NAME}.apk" ] && [ $(stat -c%s "${PACKAGE_NAME}.apk") -gt 10000 ]; then
+            echo "✅ APK downloaded: ${PACKAGE_NAME}.apk"
+          else
+            echo "❌ Could not download APK automatically"
+            echo "💡 Try using 'direct' mode with a direct APK link"
+            exit 1
+          fi
+
+      # ==================== WEB PAGE ARCHIVER (MHTML) ====================
+      - name: 🌐 Archive Web Page as MHTML
+        if: env.MODE == 'webpage'
+        run: |
+          echo "🌐 Archiving web page: $URL"
+          
+          # Create Python script for MHTML archiving
+          cat > save_as_mhtml.py << 'EOF'
+          import asyncio
+          import base64
+          import sys
+          import os
+          from pyppeteer import launch
+          
+          async def save_as_mhtml(url, output_path):
+              browser = None
+              try:
+                  browser = await launch(
+                      headless=True,
+                      args=['--no-sandbox', '--disable-setuid-sandbox']
+                  )
+                  page = await browser.newPage()
+                  
+                  # Set viewport and user agent
+                  await page.setViewport({'width': 1920, 'height': 1080})
+                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+                  
+                  print(f"📄 Loading page: {url}")
+                  await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 60000})
+                  
+                  # Wait for additional content
+                  await asyncio.sleep(3)
+                  
+                  # Save as MHTML
+                  cdp_session = await page.target.createCDPSession()
+                  mhtml_data = await cdp_session.send('Page.captureSnapshot', {})
+                  
+                  if 'data' in mhtml_data:
+                      mhtml_bytes = base64.b64decode(mhtml_data['data'])
+                      with open(output_path, 'wb') as f:
+                          f.write(mhtml_bytes)
+                      print(f"✅ Page archived: {output_path}")
+                      return True
+                  else:
+                      print("❌ Failed to capture MHTML")
+                      return False
+                      
+              except Exception as e:
+                  print(f"❌ Error archiving page: {e}")
+                  return False
+              finally:
+                  if browser:
+                      await browser.close()
+          
+          if __name__ == '__main__':
+              url = os.environ.get('URL', '')
+              output_file = os.environ.get('OUTPUT_FILE', 'archived_page.mhtml')
+              
+              if not url:
+                  print("❌ No URL provided")
+                  sys.exit(1)
+              
+              asyncio.get_event_loop().run_until_complete(save_as_mhtml(url, output_file))
+          EOF
+          
+          cd "$OUTPUT_FOLDER"
+          OUTPUT_FILE="webpage_$(date +%Y%m%d_%H%M%S).mhtml"
+          export URL="$URL"
+          export OUTPUT_FILE="$OUTPUT_FILE"
+          
+          python3 ../save_as_mhtml.py
+          
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "✅ Web page archived: $OUTPUT_FILE"
+            # Compress MHTML file if it's large
+            if [ $(stat -c%s "$OUTPUT_FILE") -gt 50000000 ]; then
+              zip "${OUTPUT_FILE}.zip" "$OUTPUT_FILE"
+              rm -f "$OUTPUT_FILE"
+              echo "✅ Large file compressed: ${OUTPUT_FILE}.zip"
+            fi
+          else
+            echo "❌ Failed to archive web page"
+            exit 1
+          fi
+
+      # ==================== ADULT CONTENT DOWNLOADER ====================
+      - name: 🔞 Adult Content Downloader
+        if: env.MODE == 'adult'
+        run: |
+          echo "🔞 Downloading adult content: $URL"
+          
+          # Use yt-dlp which supports many adult platforms
+          yt-dlp \
+            --no-check-certificate \
+            --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' \
+            --retries 10 \
+            --fragment-retries 10 \
+            --no-playlist \
+            --output "$OUTPUT_FOLDER/%(title)s [%(id)s].%(ext)s" \
+            "$URL"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Download completed!"
+          else
+            echo "❌ Download failed! Some adult platforms may require cookies."
+            echo "💡 Try again later or use 'direct' mode with the video URL"
+            exit 1
+          fi
+
+      # ==================== FILE SPLITTER (for large files >90MB) ====================
+      - name: ✂️ Split large files into 90MB chunks
+        run: |
+          echo "🔧 Processing downloaded files..."
+          
+          LIMIT=$((90 * 1024 * 1024))  # 90MB limit for GitHub
+          
+          for FILE in "$OUTPUT_FOLDER"/*; do
+            [ -f "$FILE" ] || continue
+            [ "$(basename "$FILE")" = "*.part" ] && continue
+            
+            SIZE=$(stat -c%s "$FILE")
+            BASENAME=$(basename "$FILE")
+            NAME="${BASENAME%.*}"
+            
+            echo "📄 $BASENAME ($(numfmt --to=iec-i --suffix=B $SIZE))"
+            
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "✂️ File exceeds 90MB - splitting into chunks..."
+              
+              # Create folder for split files
+              FOLDERNAME=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
+              mkdir -p "$OUTPUT_FOLDER/$FOLDERNAME"
+              
+              # Move file to folder
+              mv "$FILE" "$OUTPUT_FOLDER/$FOLDERNAME/$BASENAME"
+              
+              # Create split zip
+              cd "$OUTPUT_FOLDER/$FOLDERNAME"
+              zip -s 90m "${FOLDERNAME}.zip" "$BASENAME" -q
+              rm -f "$BASENAME"
+              cd ../..
+              
+              echo "✅ Split zip created in $OUTPUT_FOLDER/$FOLDERNAME/"
+            else
+              echo "✅ File under 90MB - kept as single file"
+            fi
+          done
+          
+          echo "🎉 All files processed successfully!"
+
+      # ==================== COMMIT & PUSH ====================
+      - name: 📤 Commit and push to repository
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@github.com"
+          
+          if [ -d "$OUTPUT_FOLDER" ] && [ "$(ls -A $OUTPUT_FOLDER)" ]; then
+            git add "$OUTPUT_FOLDER/"
+            git commit -m "🎬 Downloaded with Hamechiz-Down v4.0 - $(date +'%Y-%m-%d %H:%M:%S') [skip ci]" || echo "No new changes to commit"
+            git push origin HEAD:$BRANCH
+            
+            echo ""
+            echo "========================================="
+            echo "✅ DOWNLOAD COMPLETE!"
+            echo "========================================="
+            echo "🔗 Files available at:"
+            echo "   https://github.com/${{ github.repository }}/tree/$BRANCH/$OUTPUT_FOLDER"
+            echo "========================================="
+          else
+            echo "⚠️ No files to upload"
+            exit 1
+          fi
