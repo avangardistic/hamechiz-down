@@ -1,7 +1,133 @@
-# فرمت: لینک|نوع|کیفیت
-# https://youtu.be/XXXXXX|video|1080
-# https://www.youtube.com/watch?v=XXXXXX|audio|best
-# https://www.instagram.com/p/XXXXXX|video|720
-# https://twitter.com/XXXXXX/status/XXXXXX|video|best
-# https://www.tiktok.com/@XXXXXX/video/XXXXXX|video|1080
-# https://soundcloud.com/XXXXXX/XXXXXX|audio|best
+# ================================================
+# فایل لیست دانلود همه‌چیزدان v4.0
+# ================================================
+# 
+# روش استفاده:
+# 1. هر لینک را در یک خط جداگانه وارد کنید
+# 2. خطوطی که با # شروع می‌شوند نادیده گرفته می‌شوند
+# 3. حالت (mode) به صورت خودکار تشخیص داده می‌شود
+# 4. برای تنظیم دستی، از فرمت زیر استفاده کنید:
+#    دانلود <لینک> mode:<حالت> quality:<کیفیت>
+#
+# حالت‌های قابل استفاده:
+#   youtube, telegram, instagram, soundcloud, 
+#   googleplay, webpage, direct, adult
+#
+# کیفیت‌های قابل استفاده:
+#   2160, 1440, 1080, 720, 480, 360, best, audio-only
+#
+# ================================================
+
+# ==================== یوتیوب ====================
+
+# دانلود ساده (کیفیت best)
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube
+
+# دانلود با کیفیت 1080
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube quality:1080
+
+# دانلود فقط صدا (MP3)
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube audio-only
+
+# دانلود با کیفیت 4K و زیرنویس فارسی
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube quality:2160 subtitles:true
+
+# دانلود کل پلی‌لیست
+# دانلود https://youtube.com/playlist?list=PLXXXXXX mode:youtube playlist:true quality:720
+
+# دانلود با حذف اسپانسرها
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube sponsorblock:true
+
+# ==================== اینستاگرام ====================
+
+# دانلود پست
+# دانلود https://www.instagram.com/p/CXXXXXX mode:instagram
+
+# دانلود ریل
+# دانلود https://www.instagram.com/reel/CXXXXXX mode:instagram quality:720
+
+# دانلود استوری (نیاز به کوکی)
+# دانلود https://www.instagram.com/stories/username/XXXXXX mode:instagram
+
+# ==================== تلگرام ====================
+
+# دانلود از کانال عمومی
+# دانلود https://t.me/username/123 mode:telegram
+
+# دانلود با لینک مستقیم
+# دانلود https://t.me/username/123?single mode:telegram
+
+# ==================== ساندکلاد ====================
+
+# دانلود یک آهنگ
+# دانلود https://soundcloud.com/artist/track-name mode:soundcloud
+
+# دانلود کل پلی‌لیست
+# دانلود https://soundcloud.com/artist/sets/playlist-name mode:soundcloud playlist:true
+
+# ==================== گوگل پلی (APK) ====================
+
+# دانلود APK از گوگل پلی
+# دانلود https://play.google.com/store/apps/details?id=com.example.app mode:googleplay
+
+# دانلود با نام خاص
+# دانلود https://play.google.com/store/apps/details?id=com.instagram.android mode:googleplay folder:apks
+
+# ==================== لینک مستقیم ====================
+
+# دانلود فایل ZIP
+# دانلود https://example.com/files/document.zip mode:direct
+
+# دانلود عکس
+# دانلود https://example.com/images/photo.jpg mode:direct
+
+# دانلود ویدیو
+# دانلود https://example.com/videos/movie.mp4 mode:direct
+
+# دانلود فایل بزرگ (بیش از 90MB - خودکار تقسیم می‌شود)
+# دانلود https://example.com/files/large_file.zip mode:direct
+
+# ==================== آرشیو صفحات وب ====================
+
+# آرشیو یک صفحه وب (MHTML)
+# دانلود https://example.com mode:webpage
+
+# آرشیو با پوشه مخصوص
+# دانلود https://www.wikipedia.org mode:webpage folder:web_archives
+
+# آرشیو صفحات فیلتر شده
+# دانلود https://www.bbc.com/persian mode:webpage
+
+# ==================== محتوای بزرگسالان ====================
+
+# (خطوط زیر به دلیل محتوای حساس کامنت شده‌اند)
+# در صورت نیاز، # ابتدای خط را بردارید
+# دانلود https://www.example.com/video/12345 mode:adult quality:720
+
+# ==================== نمونه با پارامترهای فارسی ====================
+
+# استفاده از دستورات فارسی (اختیاری)
+# دانلود https://youtu.be/dQw4w9WgXcQ حالت:یوتیوب کیفیت:1080 زیرنویس:true
+
+# ==================== نمونه ترکیبی پیشرفته ====================
+
+# دانلود با کیفیت بالا و ذخیره در پوشه مخصوص
+# دانلود https://youtu.be/dQw4w9WgXcQ mode:youtube quality:2160 subtitles:true folder:4k_videos
+
+# دانلود از چند منبع مختلف (هر لینک در یک خط)
+# دانلود https://youtu.be/VIDEO_ID_1 mode:youtube quality:1080
+# دانلود https://instagram.com/p/POST_ID mode:instagram
+# دانلود https://t.me/channel/123 mode:telegram
+# دانلود https://soundcloud.com/artist/track mode:soundcloud
+
+# ================================================
+# نکات مهم:
+# ================================================
+# 1. خطوطی که با # شروع می‌شوند اجرا نمی‌شوند
+# 2. برای فعال کردن هر لینک، # ابتدای آن خط را بردارید
+# 3. هر لینک باید در یک خط جداگانه باشد
+# 4. بین پارامترها از فاصله استفاده کنید
+# 5. پوشه خروجی پیش‌فرض: downloads/
+# 6. فایل‌های بزرگتر از 90MB خودکار تقسیم می‌شوند
+# 7. برای کوکی یوتیوب، Secret به نام YOUTUBE_COOKIES تنظیم کنید
+# ================================================
